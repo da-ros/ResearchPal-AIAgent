@@ -1,9 +1,11 @@
-import { useState } from "react";
-import { Send, Bot, User } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Send, Bot, User, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { AppLayout } from "@/components/layout/AppLayout";
+import { apiService, ChatRequest } from "@/services/api";
+import { useToast } from "@/hooks/use-toast";
 
 interface Message {
   id: string;
@@ -24,9 +26,21 @@ const initialMessages: Message[] = [
 export default function Chat() {
   const [messages, setMessages] = useState(initialMessages);
   const [inputValue, setInputValue] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [sessionId, setSessionId] = useState<string | undefined>(undefined);
+  const { toast } = useToast();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const sendMessage = () => {
-    if (!inputValue.trim()) return;
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const sendMessage = async () => {
+    if (!inputValue.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -36,18 +50,45 @@ export default function Chat() {
     };
 
     setMessages(prev => [...prev, userMessage]);
+    const currentInput = inputValue;
     setInputValue("");
+    setIsLoading(true);
 
-    // Simulate AI response
-    setTimeout(() => {
+    try {
+      const request: ChatRequest = {
+        message: currentInput,
+        session_id: sessionId
+      };
+
+      const response = await apiService.chat(request);
+      
+      // Update session ID if it's the first message
+      if (!sessionId) {
+        setSessionId(response.session_id);
+      }
+
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
-        content: "I understand you're interested in that topic. Let me search through the latest research papers and provide you with relevant findings...",
+        content: response.response,
         sender: "assistant",
         timestamp: new Date()
       };
+
       setMessages(prev => [...prev, aiResponse]);
-    }, 1000);
+    } catch (error) {
+      console.error('Error sending message:', error);
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive",
+      });
+      
+      // Remove the user message if the API call failed
+      setMessages(prev => prev.filter(msg => msg.id !== userMessage.id));
+      setInputValue(currentInput); // Restore the input
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -82,7 +123,9 @@ export default function Chat() {
                     : "bg-card"
                 }`}
               >
-                <p className="text-sm leading-relaxed">{message.content}</p>
+                <div className="max-h-96 overflow-y-auto">
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.content}</p>
+                </div>
                 <p className={`text-xs mt-2 ${
                   message.sender === "user" 
                     ? "text-primary-foreground/70" 
@@ -102,6 +145,24 @@ export default function Chat() {
               )}
             </div>
           ))}
+          
+          {/* Loading indicator */}
+          {isLoading && (
+            <div className="flex gap-3 justify-start">
+              <div className="flex-shrink-0 w-8 h-8 bg-primary rounded-full flex items-center justify-center">
+                <Bot className="h-4 w-4 text-primary-foreground" />
+              </div>
+              <Card className="max-w-[80%] p-3 bg-card">
+                <div className="flex items-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                  <p className="text-sm text-muted-foreground">Thinking...</p>
+                </div>
+              </Card>
+            </div>
+          )}
+          
+          {/* Scroll target */}
+          <div ref={messagesEndRef} />
         </div>
 
         {/* Input */}
@@ -113,28 +174,34 @@ export default function Chat() {
               onKeyPress={handleKeyPress}
               placeholder="Ask about research papers, trends, or concepts..."
               className="flex-1"
+              disabled={isLoading}
             />
             <Button 
               onClick={sendMessage}
-              disabled={!inputValue.trim()}
+              disabled={!inputValue.trim() || isLoading}
               size="icon"
             >
-              <Send className="h-4 w-4" />
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
             </Button>
           </div>
           
           {/* Quick prompts */}
           <div className="flex gap-2 mt-3 overflow-x-auto">
             {[
-              "Latest papers on transformers",
-              "Explain neural networks",
-              "Find ML papers from 2024"
+              "Find papers on transformers",
+              "Research on neural networks",
+              "Latest ML papers from 2024"
             ].map((prompt) => (
               <Button
                 key={prompt}
                 variant="outline"
                 size="sm"
                 onClick={() => setInputValue(prompt)}
+                disabled={isLoading}
                 className="whitespace-nowrap flex-shrink-0"
               >
                 {prompt}
