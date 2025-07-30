@@ -66,7 +66,7 @@ A cutting-edge AI-powered research assistant that combines advanced language mod
 
 1. **Clone and Install**
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/da-ros/ResearchPal-AIAgent.git
    cd ResearchPal-AIAgent
    
    # Install frontend dependencies
